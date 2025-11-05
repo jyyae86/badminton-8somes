@@ -1,0 +1,655 @@
+import { useState, useEffect } from 'react';
+import './App.css';
+import {
+  generateRoundRobinSchedule,
+  calculatePayoutsWithSideBets,
+  calculatePlayerStats,
+  calculateSideBetTotals,
+  type Round,
+  type Game,
+  type SideBet,
+} from './utils/scheduler';
+import { updateURL, getStateFromURL, clearURLState } from './utils/urlState';
+
+type Stage = 'input' | 'playing' | 'results';
+
+function App() {
+  const [stage, setStage] = useState<Stage>('input');
+  const [playerNames, setPlayerNames] = useState<string[]>(Array(8).fill(''));
+  const entryFee = 2; // Fixed entry fee of $2
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [currentRound, setCurrentRound] = useState<number>(0);
+  const [sideBets, setSideBets] = useState<SideBet[]>([]);
+
+  const handlePlayerNameChange = (index: number, name: string) => {
+    const newNames = [...playerNames];
+    newNames[index] = name;
+    setPlayerNames(newNames);
+  };
+
+  const startTournament = () => {
+    const filledNames = playerNames.filter((name) => name.trim() !== '');
+    if (filledNames.length !== 8) {
+      alert('Please enter exactly 8 player names');
+      return;
+    }
+
+    const schedule = generateRoundRobinSchedule(playerNames);
+    setRounds(schedule);
+    setCurrentRound(0);
+    setStage('playing');
+  };
+
+  const setGameScore = (gameId: number, team1Score: number, team2Score: number) => {
+    setRounds((prevRounds) =>
+      prevRounds.map((round) => ({
+        ...round,
+        games: round.games.map((game) =>
+          game.id === gameId ? { ...game, team1Score, team2Score } : game
+        ),
+      }))
+    );
+  };
+
+  const goToNextRound = () => {
+    if (currentRound < rounds.length - 1) {
+      setCurrentRound(currentRound + 1);
+    }
+  };
+
+  const goToPreviousRound = () => {
+    if (currentRound > 0) {
+      setCurrentRound(currentRound - 1);
+    }
+  };
+
+  const finishTournament = () => {
+    setStage('results');
+  };
+
+  const resetTournament = () => {
+    const confirmed = window.confirm(
+      'Are you sure you want to reset the tournament? All progress, scores, and side bets will be lost.'
+    );
+
+    if (confirmed) {
+      setPlayerNames(Array(8).fill(''));
+      setRounds([]);
+      setCurrentRound(0);
+      setSideBets([]);
+      setStage('input');
+      clearURLState();
+    }
+  };
+
+  // Load state from URL on mount
+  useEffect(() => {
+    const urlState = getStateFromURL();
+    if (urlState) {
+      setStage(urlState.stage);
+      setPlayerNames(urlState.playerNames);
+      setRounds(urlState.rounds);
+      setCurrentRound(urlState.currentRound);
+      setSideBets(urlState.sideBets);
+    }
+  }, []);
+
+  // Sync state to URL whenever it changes
+  useEffect(() => {
+    if (stage !== 'input' || playerNames.some(name => name.trim() !== '')) {
+      updateURL({
+        stage,
+        playerNames,
+        rounds,
+        currentRound,
+        sideBets,
+      });
+    }
+  }, [stage, playerNames, rounds, currentRound, sideBets]);
+
+  const addSideBet = (sideBet: SideBet) => {
+    setSideBets([...sideBets, sideBet]);
+  };
+
+  const updateSideBet = (id: number, winner: 1 | 2) => {
+    setSideBets(sideBets.map(bet =>
+      bet.id === id ? { ...bet, winner } : bet
+    ));
+  };
+
+  const deleteSideBet = (id: number) => {
+    setSideBets(sideBets.filter(bet => bet.id !== id));
+  };
+
+  const allGamesCompleted = rounds.every((round) =>
+    round.games.every((game) => game.team1Score !== undefined && game.team2Score !== undefined)
+  );
+
+  return (
+    <div className="app">
+      <header>
+        <h1>🏸 Badminton Match Maker</h1>
+        <p>Round-robin doubles tournament with payment calculation</p>
+      </header>
+
+      {stage === 'input' && (
+        <div className="input-stage">
+          <div className="player-inputs">
+            <h2>Enter Player Names</h2>
+            <div className="player-grid">
+              {playerNames.map((name, index) => (
+                <div key={index} className="player-input-row">
+                  <label>Player {index + 1}:</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => handlePlayerNameChange(index, e.target.value)}
+                    placeholder={`Player ${index + 1}`}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="wager-input">
+            <h2>Prize Pool</h2>
+            <div className="prize-info">
+              <div className="prize-row">
+                <span>Entry Fee:</span>
+                <strong>${entryFee} per player</strong>
+              </div>
+              <div className="prize-row">
+                <span>Total Pool:</span>
+                <strong>${entryFee * 8}</strong>
+              </div>
+            </div>
+            <div className="prize-distribution">
+              <h3>Prize Distribution</h3>
+              <ul>
+                <li>🥇 1st Place: <strong>$8</strong></li>
+                <li>🥈 2nd Place: <strong>$6</strong></li>
+                <li>🥉 3rd Place: <strong>$2</strong></li>
+              </ul>
+            </div>
+            <p className="wager-info">
+              Winner is determined by total points scored across all 7 games.
+            </p>
+          </div>
+
+          <button className="start-button" onClick={startTournament}>
+            Generate Tournament
+          </button>
+        </div>
+      )}
+
+      {stage === 'playing' && (
+        <div className="playing-stage">
+          <div className="tournament-header">
+            <h2>
+              Round {currentRound + 1} of {rounds.length}
+            </h2>
+            <div className="round-navigation">
+              <button onClick={goToPreviousRound} disabled={currentRound === 0}>
+                ← Previous Round
+              </button>
+              <button
+                onClick={goToNextRound}
+                disabled={currentRound === rounds.length - 1}
+              >
+                Next Round →
+              </button>
+            </div>
+          </div>
+
+          <div className="games-container">
+            {rounds[currentRound]?.games.map((game) => (
+              <GameCard
+                key={game.id}
+                game={game}
+                onSetScore={(team1Score, team2Score) => setGameScore(game.id, team1Score, team2Score)}
+              />
+            ))}
+          </div>
+
+          <div className="tournament-actions">
+            {allGamesCompleted ? (
+              <button className="finish-button" onClick={finishTournament}>
+                View Results & Payouts
+              </button>
+            ) : (
+              <p className="completion-notice">
+                Complete all games to view final results
+              </p>
+            )}
+            <button className="reset-button" onClick={resetTournament}>
+              Reset Tournament
+            </button>
+          </div>
+        </div>
+      )}
+
+      {stage === 'results' && (
+        <div className="results-stage">
+          <h2>Tournament Results</h2>
+
+          <div className="stats-container">
+            <h3>Player Statistics</h3>
+            <StatsTable rounds={rounds} />
+          </div>
+
+          <div className="sidebets-container">
+            <h3>Side Bets</h3>
+            <SideBetsManager
+              playerNames={playerNames}
+              sideBets={sideBets}
+              onAddSideBet={addSideBet}
+              onUpdateSideBet={updateSideBet}
+              onDeleteSideBet={deleteSideBet}
+            />
+          </div>
+
+          <div className="payouts-container">
+            <h3>Payment Calculation</h3>
+            <p className="wager-reminder">Entry Fee: ${entryFee} per player</p>
+            <PayoutsTable rounds={rounds} entryFee={entryFee} sideBets={sideBets} />
+          </div>
+
+          <button className="reset-button" onClick={resetTournament}>
+            New Tournament
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GameCard({
+  game,
+  onSetScore,
+}: {
+  game: Game;
+  onSetScore: (team1Score: number, team2Score: number) => void;
+}) {
+  const [team1Input, setTeam1Input] = useState<string>(game.team1Score?.toString() || '');
+  const [team2Input, setTeam2Input] = useState<string>(game.team2Score?.toString() || '');
+
+  const handleScoreSubmit = () => {
+    const score1 = parseInt(team1Input);
+    const score2 = parseInt(team2Input);
+
+    if (!isNaN(score1) && !isNaN(score2) && score1 >= 0 && score2 >= 0) {
+      onSetScore(score1, score2);
+    } else {
+      alert('Please enter valid scores (non-negative numbers)');
+    }
+  };
+
+  const isCompleted = game.team1Score !== undefined && game.team2Score !== undefined;
+  const team1Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team1Score > game.team2Score;
+  const team2Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team2Score > game.team1Score;
+
+  return (
+    <div className={`game-card ${isCompleted ? 'completed' : ''}`}>
+      <h3>Game {game.id}</h3>
+      <div className="teams">
+        <div className={`team score-input ${team1Won ? 'winner' : team2Won ? 'loser' : ''}`}>
+          <div className="team-label">Team 1</div>
+          <div className="player-names">
+            {game.team1[0]} & {game.team1[1]}
+          </div>
+          <input
+            type="number"
+            className="score-field"
+            value={team1Input}
+            onChange={(e) => setTeam1Input(e.target.value)}
+            placeholder="Score"
+            min="0"
+          />
+          {team1Won && <div className="winner-badge">✓ Winner</div>}
+        </div>
+
+        <div className="vs">VS</div>
+
+        <div className={`team score-input ${team2Won ? 'winner' : team1Won ? 'loser' : ''}`}>
+          <div className="team-label">Team 2</div>
+          <div className="player-names">
+            {game.team2[0]} & {game.team2[1]}
+          </div>
+          <input
+            type="number"
+            className="score-field"
+            value={team2Input}
+            onChange={(e) => setTeam2Input(e.target.value)}
+            placeholder="Score"
+            min="0"
+          />
+          {team2Won && <div className="winner-badge">✓ Winner</div>}
+        </div>
+      </div>
+      <button className="submit-score-button" onClick={handleScoreSubmit}>
+        {isCompleted ? 'Update Score' : 'Submit Score'}
+      </button>
+    </div>
+  );
+}
+
+function StatsTable({ rounds }: { rounds: Round[] }) {
+  const stats = calculatePlayerStats(rounds);
+  const sortedPlayers = Object.entries(stats).sort(
+    ([, a], [, b]) => a.pointsLost - b.pointsLost
+  );
+  console.log(stats);
+  console.log(sortedPlayers);
+
+  return (
+    <>
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Player</th>
+            <th>Points Lost</th>
+            <th>Wins</th>
+            <th>Losses</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedPlayers.map(([player, { pointsLost, wins, losses }], index) => (
+            <tr key={player}>
+              <td>{index + 1}</td>
+              <td>{player}</td>
+              <td><strong>{pointsLost}</strong></td>
+              <td>{wins}</td>
+              <td>{losses}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="game-breakdown">
+        <h4>Game-by-Game Breakdown</h4>
+        <table className="breakdown-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>G1</th>
+              <th>G2</th>
+              <th>G3</th>
+              <th>G4</th>
+              <th>G5</th>
+              <th>G6</th>
+              <th>G7</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedPlayers.map(([player, { gameScores }]) => (
+              <tr key={player}>
+                <td><strong>{player}</strong></td>
+                {gameScores.map((score, index) => (
+                  <td key={index} className={score === 21 ? 'perfect-score' : ''}>
+                    {score}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function PayoutsTable({
+  rounds,
+  entryFee,
+  sideBets,
+}: {
+  rounds: Round[];
+  entryFee: number;
+  sideBets: SideBet[];
+}) {
+  const stats = calculatePlayerStats(rounds);
+  const payouts = calculatePayoutsWithSideBets(rounds, entryFee, sideBets);
+  const sideBetTotals = calculateSideBetTotals(sideBets);
+
+  // Sort by points lost (ascending - fewest points lost wins)
+  const sortedPlayers = Object.entries(stats).sort(
+    ([, a], [, b]) => a.pointsLost - b.pointsLost
+  );
+
+  // Prize amounts
+  const prizes = [8, 6, 2];
+
+  const getRankDisplay = (rank: number) => {
+    if (rank === 0) return '🥇 1st';
+    if (rank === 1) return '🥈 2nd';
+    if (rank === 2) return '🥉 3rd';
+    return `${rank + 1}th`;
+  };
+
+  const getPrizeAmount = (rank: number) => {
+    if (rank < prizes.length) return prizes[rank];
+    return 0;
+  };
+
+  const totalPaid = sortedPlayers.length * entryFee;
+  const totalPrizes = prizes.reduce((sum, prize) => sum + prize, 0);
+
+  return (
+    <>
+      <div className="payout-info">
+        <p>Total entry fees collected: <strong>${totalPaid}</strong></p>
+        <p>Total prizes awarded: <strong>${totalPrizes}</strong></p>
+      </div>
+      <table className="payouts-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Player</th>
+            <th>Points Lost</th>
+            <th>Prize</th>
+            <th>Entry Fee</th>
+            <th>Side Bets</th>
+            <th>Net Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sortedPlayers.map(([player, playerStats], index) => {
+            const prize = getPrizeAmount(index);
+            const sideBetAmount = sideBetTotals[player] || 0;
+            const netAmount = payouts[player];
+            return (
+              <tr key={player} className={netAmount > 0 ? 'winner' : netAmount < 0 ? 'loser' : ''}>
+                <td><strong>{getRankDisplay(index)}</strong></td>
+                <td>{player}</td>
+                <td>{playerStats.pointsLost}</td>
+                <td className={prize > 0 ? 'positive' : ''}>
+                  ${prize.toFixed(2)}
+                </td>
+                <td className="negative">-${entryFee.toFixed(2)}</td>
+                <td className={sideBetAmount > 0 ? 'positive' : sideBetAmount < 0 ? 'negative' : ''}>
+                  {sideBetAmount !== 0 ? `${sideBetAmount > 0 ? '+' : ''}$${Math.abs(sideBetAmount).toFixed(2)}` : '$0.00'}
+                </td>
+                <td className={netAmount > 0 ? 'positive' : netAmount < 0 ? 'negative' : ''}>
+                  <strong>${netAmount > 0 ? '+' : ''}{netAmount.toFixed(2)}</strong>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="payout-summary">
+        <p>
+          Balance: $
+          {(totalPrizes - totalPaid).toFixed(2)}{' '}
+          {Math.abs(totalPrizes - totalPaid) < 0.01 ? '✓' : '⚠️'}
+        </p>
+      </div>
+    </>
+  );
+}
+
+function SideBetsManager({
+  playerNames,
+  sideBets,
+  onAddSideBet,
+  onUpdateSideBet,
+  onDeleteSideBet,
+}: {
+  playerNames: string[];
+  sideBets: SideBet[];
+  onAddSideBet: (sideBet: SideBet) => void;
+  onUpdateSideBet: (id: number, winner: 1 | 2) => void;
+  onDeleteSideBet: (id: number) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [team1Player1, setTeam1Player1] = useState('');
+  const [team1Player2, setTeam1Player2] = useState('');
+  const [team2Player1, setTeam2Player1] = useState('');
+  const [team2Player2, setTeam2Player2] = useState('');
+  const [amount, setAmount] = useState('');
+
+  const handleAddSideBet = () => {
+    if (!team1Player1 || !team1Player2 || !team2Player1 || !team2Player2 || !amount) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    const players = [team1Player1, team1Player2, team2Player1, team2Player2];
+    const uniquePlayers = new Set(players);
+    if (uniquePlayers.size !== 4) {
+      alert('All four players must be different');
+      return;
+    }
+
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    const newSideBet: SideBet = {
+      id: Date.now(),
+      team1: [team1Player1, team1Player2],
+      team2: [team2Player1, team2Player2],
+      amount: parsedAmount,
+      winner: null,
+    };
+
+    onAddSideBet(newSideBet);
+    setTeam1Player1('');
+    setTeam1Player2('');
+    setTeam2Player1('');
+    setTeam2Player2('');
+    setAmount('');
+    setShowForm(false);
+  };
+
+  return (
+    <div className="sidebets-manager">
+      {!showForm && (
+        <button className="add-sidebet-button" onClick={() => setShowForm(true)}>
+          + Add Side Bet
+        </button>
+      )}
+
+      {showForm && (
+        <div className="sidebet-form">
+          <h4>New Side Bet</h4>
+          <div className="sidebet-teams">
+            <div className="sidebet-team">
+              <label>Team 1</label>
+              <select value={team1Player1} onChange={(e) => setTeam1Player1(e.target.value)}>
+                <option value="">Select Player 1</option>
+                {playerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <select value={team1Player2} onChange={(e) => setTeam1Player2(e.target.value)}>
+                <option value="">Select Player 2</option>
+                {playerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="vs">VS</div>
+            <div className="sidebet-team">
+              <label>Team 2</label>
+              <select value={team2Player1} onChange={(e) => setTeam2Player1(e.target.value)}>
+                <option value="">Select Player 1</option>
+                {playerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <select value={team2Player2} onChange={(e) => setTeam2Player2(e.target.value)}>
+                <option value="">Select Player 2</option>
+                {playerNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="sidebet-amount">
+            <label>Amount per player: $</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              min="0"
+              step="0.01"
+            />
+          </div>
+          <div className="sidebet-form-actions">
+            <button onClick={handleAddSideBet}>Add Side Bet</button>
+            <button onClick={() => setShowForm(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {sideBets.length > 0 && (
+        <div className="sidebets-list">
+          <table className="sidebets-table">
+            <thead>
+              <tr>
+                <th>Team 1</th>
+                <th>Team 2</th>
+                <th>Amount</th>
+                <th>Winner</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sideBets.map((bet) => (
+                <tr key={bet.id} className={bet.winner ? 'completed' : ''}>
+                  <td>{bet.team1[0]} & {bet.team1[1]}</td>
+                  <td>{bet.team2[0]} & {bet.team2[1]}</td>
+                  <td>${bet.amount.toFixed(2)}</td>
+                  <td>
+                    {bet.winner === null ? (
+                      <div className="winner-buttons">
+                        <button onClick={() => onUpdateSideBet(bet.id, 1)}>Team 1</button>
+                        <button onClick={() => onUpdateSideBet(bet.id, 2)}>Team 2</button>
+                      </div>
+                    ) : (
+                      <span className="winner-badge">
+                        {bet.winner === 1 ? 'Team 1 Won' : 'Team 2 Won'}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    <button className="delete-button" onClick={() => onDeleteSideBet(bet.id)}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
