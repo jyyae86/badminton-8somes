@@ -25,11 +25,15 @@ function App() {
   const [rounds, setRounds] = useState<Round[]>([]);
   const [currentRound, setCurrentRound] = useState<number>(0);
   const [sideBets, setSideBets] = useState<SideBet[]>([]);
+  const [customPairing, setCustomPairing] = useState<boolean>(false);
+  const [customTeams, setCustomTeams] = useState<Array<[string, string]>>([]);
 
   const handleFormatChange = (newFormat: TournamentFormat) => {
     setFormat(newFormat);
     const playerCount = newFormat === '8-player' ? 8 : 12;
     setPlayerNames(Array(playerCount).fill(''));
+    setCustomPairing(false);
+    setCustomTeams([]);
   };
 
   const handlePlayerNameChange = (index: number, name: string) => {
@@ -47,9 +51,30 @@ function App() {
       return;
     }
 
+    // For 12-player mode with custom pairing, validate teams
+    if (format === '12-player' && customPairing) {
+      if (customTeams.length !== 6) {
+        alert('Please create exactly 6 teams');
+        return;
+      }
+
+      // Validate all players are assigned
+      const assignedPlayers = new Set<string>();
+      customTeams.forEach(team => {
+        assignedPlayers.add(team[0]);
+        assignedPlayers.add(team[1]);
+      });
+
+      const allPlayers = playerNames.filter(name => name.trim() !== '');
+      if (assignedPlayers.size !== allPlayers.length) {
+        alert('All players must be assigned to a team');
+        return;
+      }
+    }
+
     const schedule = format === '8-player'
       ? generateRoundRobinSchedule(playerNames)
-      : generate12PlayerSchedule(playerNames);
+      : generate12PlayerSchedule(playerNames, customPairing ? customTeams : undefined);
     setRounds(schedule);
     setCurrentRound(0);
     setStage('playing');
@@ -93,6 +118,8 @@ function App() {
       setRounds([]);
       setCurrentRound(0);
       setSideBets([]);
+      setCustomPairing(false);
+      setCustomTeams([]);
       setStage('input');
       clearURLState();
     }
@@ -108,6 +135,8 @@ function App() {
       setRounds(urlState.rounds);
       setCurrentRound(urlState.currentRound);
       setSideBets(urlState.sideBets);
+      if (urlState.customPairing !== undefined) setCustomPairing(urlState.customPairing);
+      if (urlState.customTeams) setCustomTeams(urlState.customTeams);
     }
   }, []);
 
@@ -121,9 +150,11 @@ function App() {
         rounds,
         currentRound,
         sideBets,
+        customPairing,
+        customTeams,
       });
     }
-  }, [stage, format, playerNames, rounds, currentRound, sideBets]);
+  }, [stage, format, playerNames, rounds, currentRound, sideBets, customPairing, customTeams]);
 
   const addSideBet = (sideBet: SideBet) => {
     setSideBets([...sideBets, sideBet]);
@@ -191,6 +222,37 @@ function App() {
               ))}
             </div>
           </div>
+
+          {format === '12-player' && (
+            <div className="custom-pairing-section">
+              <h2>Team Pairing</h2>
+              <div className="pairing-toggle">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={customPairing}
+                    onChange={(e) => {
+                      setCustomPairing(e.target.checked);
+                      if (!e.target.checked) {
+                        setCustomTeams([]);
+                      }
+                    }}
+                  />
+                  Specify custom team pairings
+                </label>
+              </div>
+              {!customPairing && (
+                <p className="pairing-info">Teams will be randomly assigned</p>
+              )}
+              {customPairing && (
+                <CustomPairingInterface
+                  playerNames={playerNames.filter(name => name.trim() !== '')}
+                  customTeams={customTeams}
+                  onTeamsChange={setCustomTeams}
+                />
+              )}
+            </div>
+          )}
 
           <div className="wager-input">
             <h2>Prize Pool</h2>
@@ -841,6 +903,116 @@ function SideBetsManager({
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+function CustomPairingInterface({
+  playerNames,
+  customTeams,
+  onTeamsChange,
+}: {
+  playerNames: string[];
+  customTeams: Array<[string, string]>;
+  onTeamsChange: (teams: Array<[string, string]>) => void;
+}) {
+  const handleTeamChange = (teamIndex: number, playerIndex: 0 | 1, value: string) => {
+    const newTeams = [...customTeams];
+    if (newTeams[teamIndex]) {
+      newTeams[teamIndex] = [...newTeams[teamIndex]] as [string, string];
+      newTeams[teamIndex][playerIndex] = value;
+    } else {
+      newTeams[teamIndex] = ['', ''];
+      newTeams[teamIndex][playerIndex] = value;
+    }
+    onTeamsChange(newTeams);
+  };
+
+  const addTeam = () => {
+    if (customTeams.length < 6) {
+      onTeamsChange([...customTeams, ['', '']]);
+    }
+  };
+
+  const removeTeam = (teamIndex: number) => {
+    const newTeams = customTeams.filter((_, index) => index !== teamIndex);
+    onTeamsChange(newTeams);
+  };
+
+  const getAvailablePlayers = (teamIndex: number, playerIndex: 0 | 1) => {
+    const assignedPlayers = new Set<string>();
+    customTeams.forEach((team, idx) => {
+      if (idx !== teamIndex) {
+        if (team[0]) assignedPlayers.add(team[0]);
+        if (team[1]) assignedPlayers.add(team[1]);
+      } else {
+        // For the current team, only mark the other player as assigned
+        if (playerIndex === 0 && team[1]) assignedPlayers.add(team[1]);
+        if (playerIndex === 1 && team[0]) assignedPlayers.add(team[0]);
+      }
+    });
+
+    return playerNames.filter(name => !assignedPlayers.has(name));
+  };
+
+  return (
+    <div className="custom-pairing-interface">
+      <div className="teams-list">
+        {customTeams.map((team, teamIndex) => (
+          <div key={teamIndex} className="team-pairing">
+            <div className="team-header">
+              <span>Team {teamIndex + 1}</span>
+              <button
+                className="remove-team-button"
+                onClick={() => removeTeam(teamIndex)}
+              >
+                Remove
+              </button>
+            </div>
+            <div className="team-players">
+              <select
+                value={team[0] || ''}
+                onChange={(e) => handleTeamChange(teamIndex, 0, e.target.value)}
+              >
+                <option value="">Select Player 1</option>
+                {getAvailablePlayers(teamIndex, 0).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                {team[0] && !getAvailablePlayers(teamIndex, 0).includes(team[0]) && (
+                  <option value={team[0]}>{team[0]}</option>
+                )}
+              </select>
+              <span className="pairing-separator">&</span>
+              <select
+                value={team[1] || ''}
+                onChange={(e) => handleTeamChange(teamIndex, 1, e.target.value)}
+              >
+                <option value="">Select Player 2</option>
+                {getAvailablePlayers(teamIndex, 1).map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                {team[1] && !getAvailablePlayers(teamIndex, 1).includes(team[1]) && (
+                  <option value={team[1]}>{team[1]}</option>
+                )}
+              </select>
+            </div>
+          </div>
+        ))}
+      </div>
+      {customTeams.length < 6 && (
+        <button className="add-team-button" onClick={addTeam}>
+          + Add Team
+        </button>
+      )}
+      {playerNames.length === 12 && customTeams.length < 6 && (
+        <p className="pairing-hint">
+          You need {6 - customTeams.length} more team(s) for 12 players
+        </p>
       )}
     </div>
   );

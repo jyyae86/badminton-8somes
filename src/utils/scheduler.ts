@@ -105,16 +105,26 @@ export function generateRoundRobinSchedule(players: string[]): Round[] {
  * Players are randomly paired into teams at the start
  * Each team plays every other team exactly once (5 games per team)
  */
-export function generate12PlayerSchedule(players: string[]): Round[] {
+export function generate12PlayerSchedule(
+  players: string[],
+  customTeams?: Array<[string, string]>
+): Round[] {
   if (players.length !== 12) {
     throw new Error('Exactly 12 players are required');
   }
 
-  // Randomly shuffle players and pair them into 6 teams
-  const shuffledPlayers = shuffleArray(players);
-  const teams: Array<[string, string]> = [];
-  for (let i = 0; i < 12; i += 2) {
-    teams.push([shuffledPlayers[i], shuffledPlayers[i + 1]]);
+  let teams: Array<[string, string]>;
+
+  if (customTeams && customTeams.length === 6) {
+    // Use custom teams if provided
+    teams = customTeams;
+  } else {
+    // Randomly shuffle players and pair them into 6 teams
+    const shuffledPlayers = shuffleArray(players);
+    teams = [];
+    for (let i = 0; i < 12; i += 2) {
+      teams.push([shuffledPlayers[i], shuffledPlayers[i + 1]]);
+    }
   }
 
   // Round-robin scheduling for 6 teams

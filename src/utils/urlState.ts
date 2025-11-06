@@ -7,6 +7,8 @@ export interface TournamentState {
   rounds: Round[];
   currentRound: number;
   sideBets: SideBet[];
+  customPairing?: boolean;
+  customTeams?: Array<[string, string]>;
 }
 
 /**
