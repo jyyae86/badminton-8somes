@@ -458,38 +458,77 @@ function TeamStatsTable({ rounds }: { rounds: Round[] }) {
   const teamStats = calculateTeamStats(rounds);
 
   return (
-    <table className="stats-table">
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Team</th>
-          <th>Wins</th>
-          <th>Losses</th>
-          <th>Points For</th>
-          <th>Points Against</th>
-          <th>Differential</th>
-        </tr>
-      </thead>
-      <tbody>
-        {teamStats.map((team, index) => (
-          <tr key={team.teamName}>
-            <td>
-              <strong>
-                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
-              </strong>
-            </td>
-            <td><strong>{team.teamName}</strong></td>
-            <td>{team.wins}</td>
-            <td>{team.losses}</td>
-            <td>{team.pointsScored}</td>
-            <td>{team.pointsConceded}</td>
-            <td className={team.pointDifferential > 0 ? 'positive' : team.pointDifferential < 0 ? 'negative' : ''}>
-              {team.pointDifferential > 0 ? '+' : ''}{team.pointDifferential}
-            </td>
+    <>
+      <table className="stats-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Team</th>
+            <th>Wins</th>
+            <th>Losses</th>
+            <th>Differential</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {teamStats.map((team, index) => (
+            <tr key={team.teamName}>
+              <td>
+                <strong>
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+                </strong>
+              </td>
+              <td><strong>{team.teamName}</strong></td>
+              <td>{team.wins}</td>
+              <td>{team.losses}</td>
+              <td className={team.pointDifferential > 0 ? 'positive' : team.pointDifferential < 0 ? 'negative' : ''}>
+                {team.pointDifferential > 0 ? '+' : ''}{team.pointDifferential}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div className="game-breakdown">
+        <h4>All Games</h4>
+        <table className="breakdown-table">
+          <thead>
+            <tr>
+              <th>Round</th>
+              <th>Game</th>
+              <th>Team 1</th>
+              <th>Score</th>
+              <th>Team 2</th>
+              <th>Score</th>
+              <th>Winner</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rounds.map((round) =>
+              round.games.map((game) => {
+                const team1Name = game.team1.join(' & ');
+                const team2Name = game.team2.join(' & ');
+                const team1Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team1Score > game.team2Score;
+                const team2Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team2Score > game.team1Score;
+
+                return (
+                  <tr key={game.id}>
+                    <td>Round {round.roundNumber}</td>
+                    <td>Game {game.id}</td>
+                    <td className={team1Won ? 'winner-cell' : ''}>{team1Name}</td>
+                    <td className={team1Won ? 'winner-cell' : ''}><strong>{game.team1Score ?? '-'}</strong></td>
+                    <td className={team2Won ? 'winner-cell' : ''}>{team2Name}</td>
+                    <td className={team2Won ? 'winner-cell' : ''}><strong>{game.team2Score ?? '-'}</strong></td>
+                    <td>
+                      {team1Won ? team1Name : team2Won ? team2Name : '-'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

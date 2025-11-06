@@ -542,6 +542,12 @@ header p {
   font-weight: 700;
 }
 
+.breakdown-table .winner-cell {
+  background: rgba(82, 196, 26, 0.1);
+  color: var(--success-color);
+  font-weight: 600;
+}
+
 .payouts-table tr.winner {
   background: rgba(82, 196, 26, 0.05);
 }
