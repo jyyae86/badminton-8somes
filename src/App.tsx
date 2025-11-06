@@ -464,9 +464,9 @@ function TeamStatsTable({ rounds }: { rounds: Round[] }) {
           <tr>
             <th>Rank</th>
             <th>Team</th>
+            <th>Points Lost</th>
             <th>Wins</th>
             <th>Losses</th>
-            <th>Differential</th>
           </tr>
         </thead>
         <tbody>
@@ -478,53 +478,38 @@ function TeamStatsTable({ rounds }: { rounds: Round[] }) {
                 </strong>
               </td>
               <td><strong>{team.teamName}</strong></td>
+              <td><strong>{team.pointsLost}</strong></td>
               <td>{team.wins}</td>
               <td>{team.losses}</td>
-              <td className={team.pointDifferential > 0 ? 'positive' : team.pointDifferential < 0 ? 'negative' : ''}>
-                {team.pointDifferential > 0 ? '+' : ''}{team.pointDifferential}
-              </td>
             </tr>
           ))}
         </tbody>
       </table>
 
       <div className="game-breakdown">
-        <h4>All Games</h4>
+        <h4>Game-by-Game Breakdown</h4>
         <table className="breakdown-table">
           <thead>
             <tr>
-              <th>Round</th>
-              <th>Game</th>
-              <th>Team 1</th>
-              <th>Score</th>
-              <th>Team 2</th>
-              <th>Score</th>
-              <th>Winner</th>
+              <th>Team</th>
+              <th>G1</th>
+              <th>G2</th>
+              <th>G3</th>
+              <th>G4</th>
+              <th>G5</th>
             </tr>
           </thead>
           <tbody>
-            {rounds.map((round) =>
-              round.games.map((game) => {
-                const team1Name = game.team1.join(' & ');
-                const team2Name = game.team2.join(' & ');
-                const team1Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team1Score > game.team2Score;
-                const team2Won = game.team1Score !== undefined && game.team2Score !== undefined && game.team2Score > game.team1Score;
-
-                return (
-                  <tr key={game.id}>
-                    <td>Round {round.roundNumber}</td>
-                    <td>Game {game.id}</td>
-                    <td className={team1Won ? 'winner-cell' : ''}>{team1Name}</td>
-                    <td className={team1Won ? 'winner-cell' : ''}><strong>{game.team1Score ?? '-'}</strong></td>
-                    <td className={team2Won ? 'winner-cell' : ''}>{team2Name}</td>
-                    <td className={team2Won ? 'winner-cell' : ''}><strong>{game.team2Score ?? '-'}</strong></td>
-                    <td>
-                      {team1Won ? team1Name : team2Won ? team2Name : '-'}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+            {teamStats.map((team) => (
+              <tr key={team.teamName}>
+                <td><strong>{team.teamName}</strong></td>
+                {team.gameScores.map((score, index) => (
+                  <td key={index} className={score === 21 ? 'perfect-score' : ''}>
+                    {score}
+                  </td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

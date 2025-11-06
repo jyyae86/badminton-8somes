@@ -29,6 +29,8 @@ export interface TeamStats {
   pointsScored: number;
   pointsConceded: number;
   pointDifferential: number;
+  pointsLost: number;
+  gameScores: number[];
 }
 
 /**
@@ -312,6 +314,7 @@ export function calculatePayoutsWithSideBets(
  */
 export function calculateTeamStats(rounds: Round[]): TeamStats[] {
   const teamMap = new Map<string, TeamStats>();
+  const MAX_POINTS = 21;
 
   rounds.forEach((round) => {
     round.games.forEach((game) => {
@@ -329,6 +332,8 @@ export function calculateTeamStats(rounds: Round[]): TeamStats[] {
             pointsScored: 0,
             pointsConceded: 0,
             pointDifferential: 0,
+            pointsLost: 0,
+            gameScores: [],
           });
         }
 
@@ -342,6 +347,8 @@ export function calculateTeamStats(rounds: Round[]): TeamStats[] {
             pointsScored: 0,
             pointsConceded: 0,
             pointDifferential: 0,
+            pointsLost: 0,
+            gameScores: [],
           });
         }
 
@@ -351,8 +358,13 @@ export function calculateTeamStats(rounds: Round[]): TeamStats[] {
         // Update stats
         team1Stats.pointsScored += game.team1Score;
         team1Stats.pointsConceded += game.team2Score;
+        team1Stats.pointsLost += (MAX_POINTS - game.team1Score);
+        team1Stats.gameScores.push(game.team1Score);
+
         team2Stats.pointsScored += game.team2Score;
         team2Stats.pointsConceded += game.team1Score;
+        team2Stats.pointsLost += (MAX_POINTS - game.team2Score);
+        team2Stats.gameScores.push(game.team2Score);
 
         if (game.team1Score > game.team2Score) {
           team1Stats.wins++;
