@@ -40,6 +40,56 @@ header p {
   margin: 0 auto;
 }
 
+.format-selection {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  margin-bottom: 2rem;
+}
+
+.format-selection h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.format-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.format-button {
+  flex: 1;
+  padding: 1rem;
+  font-size: 1rem;
+  font-weight: 500;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.format-button:hover {
+  border-color: var(--primary-color);
+  background: #f0f8ff;
+}
+
+.format-button.active {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: white;
+}
+
+.format-description {
+  color: #666;
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 .player-inputs,
 .wager-input {
   background: white;

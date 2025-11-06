@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   generateRoundRobinSchedule,
+  generate12PlayerSchedule,
   calculatePlayerStats,
+  calculateTeamStats,
   calculatePayouts,
+  calculate12PlayerPayouts,
   type Round,
 } from './scheduler';
 
@@ -295,5 +298,260 @@ describe('calculatePayouts', () => {
     // Grace and Henry should have worse payouts (6 points lost)
     expect(payouts['Alice']).toBeGreaterThan(payouts['Grace']);
     expect(payouts['Bob']).toBeGreaterThan(payouts['Henry']);
+  });
+});
+
+describe('generate12PlayerSchedule', () => {
+  const players = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12'];
+
+  it('should generate exactly 5 rounds', () => {
+    const rounds = generate12PlayerSchedule(players);
+    expect(rounds).toHaveLength(5);
+  });
+
+  it('should have exactly 3 games per round', () => {
+    const rounds = generate12PlayerSchedule(players);
+    rounds.forEach((round) => {
+      expect(round.games).toHaveLength(3);
+    });
+  });
+
+  it('should ensure each team (pair) plays exactly 5 games', () => {
+    const rounds = generate12PlayerSchedule(players);
+    const teamGameCounts = new Map<string, number>();
+
+    rounds.forEach((round) => {
+      round.games.forEach((game) => {
+        const team1Key = [...game.team1].sort().join('-');
+        const team2Key = [...game.team2].sort().join('-');
+        teamGameCounts.set(team1Key, (teamGameCounts.get(team1Key) || 0) + 1);
+        teamGameCounts.set(team2Key, (teamGameCounts.get(team2Key) || 0) + 1);
+      });
+    });
+
+    // With 6 teams in round-robin, each team plays 5 games
+    teamGameCounts.forEach((count) => {
+      expect(count).toBe(5);
+    });
+
+    // Should have exactly 6 teams
+    expect(teamGameCounts.size).toBe(6);
+  });
+
+  it('should ensure each team plays every other team exactly once', () => {
+    const rounds = generate12PlayerSchedule(players);
+    const matchups = new Set<string>();
+
+    rounds.forEach((round) => {
+      round.games.forEach((game) => {
+        const team1Key = [...game.team1].sort().join('-');
+        const team2Key = [...game.team2].sort().join('-');
+        const matchupKey = [team1Key, team2Key].sort().join(' vs ');
+
+        // Check for duplicates
+        expect(matchups.has(matchupKey)).toBe(false);
+        matchups.add(matchupKey);
+      });
+    });
+
+    // With 6 teams, there should be C(6,2) = 15 unique matchups
+    expect(matchups.size).toBe(15);
+  });
+
+  it('should throw error if not exactly 12 players', () => {
+    expect(() => generate12PlayerSchedule(['P1', 'P2'])).toThrow(
+      'Exactly 12 players are required'
+    );
+    expect(() => generate12PlayerSchedule([...players, 'P13'])).toThrow(
+      'Exactly 12 players are required'
+    );
+  });
+});
+
+describe('calculateTeamStats', () => {
+  const createMock12PlayerRounds = (): Round[] => {
+    return [
+      {
+        roundNumber: 1,
+        games: [
+          {
+            id: 1,
+            team1: ['P1', 'P2'],
+            team2: ['P3', 'P4'],
+            team1Score: 21,
+            team2Score: 15,
+          },
+          {
+            id: 2,
+            team1: ['P5', 'P6'],
+            team2: ['P7', 'P8'],
+            team1Score: 18,
+            team2Score: 21,
+          },
+          {
+            id: 3,
+            team1: ['P9', 'P10'],
+            team2: ['P11', 'P12'],
+            team1Score: 19,
+            team2Score: 17,
+          },
+        ],
+      },
+      {
+        roundNumber: 2,
+        games: [
+          {
+            id: 4,
+            team1: ['P1', 'P2'],
+            team2: ['P5', 'P6'],
+            team1Score: 20,
+            team2Score: 18,
+          },
+          {
+            id: 5,
+            team1: ['P3', 'P4'],
+            team2: ['P7', 'P8'],
+            team1Score: 21,
+            team2Score: 19,
+          },
+          {
+            id: 6,
+            team1: ['P9', 'P10'],
+            team2: ['P11', 'P12'],
+            team1Score: 16,
+            team2Score: 21,
+          },
+        ],
+      },
+    ];
+  };
+
+  it('should calculate wins and losses correctly', () => {
+    const rounds = createMock12PlayerRounds();
+    const teamStats = calculateTeamStats(rounds);
+
+    // P1 & P2 won both games
+    const p1p2Team = teamStats.find(t =>
+      t.players.includes('P1') && t.players.includes('P2')
+    );
+    expect(p1p2Team?.wins).toBe(2);
+    expect(p1p2Team?.losses).toBe(0);
+
+    // P11 & P12 lost one and won one
+    const p11p12Team = teamStats.find(t =>
+      t.players.includes('P11') && t.players.includes('P12')
+    );
+    expect(p11p12Team?.wins).toBe(1);
+    expect(p11p12Team?.losses).toBe(1);
+  });
+
+  it('should calculate point differential correctly', () => {
+    const rounds = createMock12PlayerRounds();
+    const teamStats = calculateTeamStats(rounds);
+
+    // P1 & P2: (21 + 20) - (15 + 18) = 41 - 33 = +8
+    const p1p2Team = teamStats.find(t =>
+      t.players.includes('P1') && t.players.includes('P2')
+    );
+    expect(p1p2Team?.pointDifferential).toBe(8);
+  });
+
+  it('should sort teams by wins first, then point differential', () => {
+    const rounds = createMock12PlayerRounds();
+    const teamStats = calculateTeamStats(rounds);
+
+    // First team should have most wins
+    for (let i = 0; i < teamStats.length - 1; i++) {
+      if (teamStats[i].wins === teamStats[i + 1].wins) {
+        // If wins are equal, check point differential
+        expect(teamStats[i].pointDifferential).toBeGreaterThanOrEqual(
+          teamStats[i + 1].pointDifferential
+        );
+      } else {
+        expect(teamStats[i].wins).toBeGreaterThan(teamStats[i + 1].wins);
+      }
+    }
+  });
+});
+
+describe('calculate12PlayerPayouts', () => {
+  const createMock12PlayerRounds = (): Round[] => {
+    const teams = [
+      ['P1', 'P2'],
+      ['P3', 'P4'],
+      ['P5', 'P6'],
+      ['P7', 'P8'],
+      ['P9', 'P10'],
+      ['P11', 'P12'],
+    ];
+
+    // Create rounds where teams have clear rankings
+    return Array.from({ length: 5 }, (_, roundIdx) => ({
+      roundNumber: roundIdx + 1,
+      games: [
+        {
+          id: roundIdx * 3 + 1,
+          team1: teams[0] as [string, string],
+          team2: teams[1] as [string, string],
+          team1Score: 21,
+          team2Score: 18,
+        },
+        {
+          id: roundIdx * 3 + 2,
+          team1: teams[2] as [string, string],
+          team2: teams[3] as [string, string],
+          team1Score: 19,
+          team2Score: 17,
+        },
+        {
+          id: roundIdx * 3 + 3,
+          team1: teams[4] as [string, string],
+          team2: teams[5] as [string, string],
+          team1Score: 16,
+          team2Score: 15,
+        },
+      ],
+    }));
+  };
+
+  it('should award $6 to each player on 1st place team', () => {
+    const rounds = createMock12PlayerRounds();
+    const payouts = calculate12PlayerPayouts(rounds, 2);
+
+    // P1 & P2 should be first place (won all games)
+    expect(payouts['P1']).toBe(4); // $6 prize - $2 entry = $4
+    expect(payouts['P2']).toBe(4);
+  });
+
+  it('should award $4 to each player on 2nd place team', () => {
+    const rounds = createMock12PlayerRounds();
+    const payouts = calculate12PlayerPayouts(rounds, 2);
+
+    // P5 & P6 won all their games (second most dominant)
+    expect(payouts['P5']).toBe(2); // $4 prize - $2 entry = $2
+    expect(payouts['P6']).toBe(2);
+  });
+
+  it('should award $2 to each player on 3rd place team', () => {
+    const rounds = createMock12PlayerRounds();
+    const payouts = calculate12PlayerPayouts(rounds, 2);
+
+    // P9 & P10 won all their games (third)
+    expect(payouts['P9']).toBe(0); // $2 prize - $2 entry = $0
+    expect(payouts['P10']).toBe(0);
+  });
+
+  it('should have balanced prize pool', () => {
+    const rounds = createMock12PlayerRounds();
+    const payouts = calculate12PlayerPayouts(rounds, 2);
+
+    const totalCollected = 12 * 2; // 12 players × $2 = $24
+    const totalPrizes = (6 + 4 + 2) * 2; // (1st + 2nd + 3rd) × 2 players = $24
+
+    expect(totalCollected).toBe(totalPrizes);
+
+    // Net sum should be 0
+    const netSum = Object.values(payouts).reduce((sum, payout) => sum + payout, 0);
+    expect(netSum).toBe(0);
   });
 });

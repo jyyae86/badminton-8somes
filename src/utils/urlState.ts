@@ -1,7 +1,8 @@
-import type { Round, SideBet } from './scheduler';
+import type { Round, SideBet, TournamentFormat } from './scheduler';
 
 export interface TournamentState {
   stage: 'input' | 'playing' | 'results';
+  format?: TournamentFormat;
   playerNames: string[];
   rounds: Round[];
   currentRound: number;

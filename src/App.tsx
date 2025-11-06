@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import {
   generateRoundRobinSchedule,
+  generate12PlayerSchedule,
   calculatePayoutsWithSideBets,
+  calculate12PlayerPayoutsWithSideBets,
   calculatePlayerStats,
+  calculateTeamStats,
   calculateSideBetTotals,
   type Round,
   type Game,
   type SideBet,
+  type TournamentFormat,
 } from './utils/scheduler';
 import { updateURL, getStateFromURL, clearURLState } from './utils/urlState';
 
@@ -15,11 +19,18 @@ type Stage = 'input' | 'playing' | 'results';
 
 function App() {
   const [stage, setStage] = useState<Stage>('input');
+  const [format, setFormat] = useState<TournamentFormat>('8-player');
   const [playerNames, setPlayerNames] = useState<string[]>(Array(8).fill(''));
   const entryFee = 2; // Fixed entry fee of $2
   const [rounds, setRounds] = useState<Round[]>([]);
   const [currentRound, setCurrentRound] = useState<number>(0);
   const [sideBets, setSideBets] = useState<SideBet[]>([]);
+
+  const handleFormatChange = (newFormat: TournamentFormat) => {
+    setFormat(newFormat);
+    const playerCount = newFormat === '8-player' ? 8 : 12;
+    setPlayerNames(Array(playerCount).fill(''));
+  };
 
   const handlePlayerNameChange = (index: number, name: string) => {
     const newNames = [...playerNames];
@@ -28,13 +39,17 @@ function App() {
   };
 
   const startTournament = () => {
+    const expectedCount = format === '8-player' ? 8 : 12;
     const filledNames = playerNames.filter((name) => name.trim() !== '');
-    if (filledNames.length !== 8) {
-      alert('Please enter exactly 8 player names');
+
+    if (filledNames.length !== expectedCount) {
+      alert(`Please enter exactly ${expectedCount} player names`);
       return;
     }
 
-    const schedule = generateRoundRobinSchedule(playerNames);
+    const schedule = format === '8-player'
+      ? generateRoundRobinSchedule(playerNames)
+      : generate12PlayerSchedule(playerNames);
     setRounds(schedule);
     setCurrentRound(0);
     setStage('playing');
@@ -73,7 +88,8 @@ function App() {
     );
 
     if (confirmed) {
-      setPlayerNames(Array(8).fill(''));
+      const playerCount = format === '8-player' ? 8 : 12;
+      setPlayerNames(Array(playerCount).fill(''));
       setRounds([]);
       setCurrentRound(0);
       setSideBets([]);
@@ -87,6 +103,7 @@ function App() {
     const urlState = getStateFromURL();
     if (urlState) {
       setStage(urlState.stage);
+      if (urlState.format) setFormat(urlState.format);
       setPlayerNames(urlState.playerNames);
       setRounds(urlState.rounds);
       setCurrentRound(urlState.currentRound);
@@ -99,13 +116,14 @@ function App() {
     if (stage !== 'input' || playerNames.some(name => name.trim() !== '')) {
       updateURL({
         stage,
+        format,
         playerNames,
         rounds,
         currentRound,
         sideBets,
       });
     }
-  }, [stage, playerNames, rounds, currentRound, sideBets]);
+  }, [stage, format, playerNames, rounds, currentRound, sideBets]);
 
   const addSideBet = (sideBet: SideBet) => {
     setSideBets([...sideBets, sideBet]);
@@ -134,6 +152,29 @@ function App() {
 
       {stage === 'input' && (
         <div className="input-stage">
+          <div className="format-selection">
+            <h2>Select Tournament Format</h2>
+            <div className="format-buttons">
+              <button
+                className={`format-button ${format === '8-player' ? 'active' : ''}`}
+                onClick={() => handleFormatChange('8-player')}
+              >
+                8 Players (Social Doubles)
+              </button>
+              <button
+                className={`format-button ${format === '12-player' ? 'active' : ''}`}
+                onClick={() => handleFormatChange('12-player')}
+              >
+                12 Players (Team Round-Robin)
+              </button>
+            </div>
+            <p className="format-description">
+              {format === '8-player'
+                ? 'Each player partners with every other player exactly once across 7 rounds.'
+                : 'Players are randomly paired into 6 teams. Each team plays all other teams once across 5 rounds.'}
+            </p>
+          </div>
+
           <div className="player-inputs">
             <h2>Enter Player Names</h2>
             <div className="player-grid">
@@ -160,19 +201,29 @@ function App() {
               </div>
               <div className="prize-row">
                 <span>Total Pool:</span>
-                <strong>${entryFee * 8}</strong>
+                <strong>${entryFee * playerNames.length}</strong>
               </div>
             </div>
             <div className="prize-distribution">
               <h3>Prize Distribution</h3>
-              <ul>
-                <li>🥇 1st Place: <strong>$8</strong></li>
-                <li>🥈 2nd Place: <strong>$6</strong></li>
-                <li>🥉 3rd Place: <strong>$2</strong></li>
-              </ul>
+              {format === '8-player' ? (
+                <ul>
+                  <li>🥇 1st Place: <strong>$8</strong></li>
+                  <li>🥈 2nd Place: <strong>$6</strong></li>
+                  <li>🥉 3rd Place: <strong>$2</strong></li>
+                </ul>
+              ) : (
+                <ul>
+                  <li>🥇 1st Place Team: <strong>$6 each</strong> (total $12)</li>
+                  <li>🥈 2nd Place Team: <strong>$4 each</strong> (total $8)</li>
+                  <li>🥉 3rd Place Team: <strong>$2 each</strong> (total $4)</li>
+                </ul>
+              )}
             </div>
             <p className="wager-info">
-              Winner is determined by total points scored across all 7 games.
+              {format === '8-player'
+                ? 'Winner is determined by fewest points lost across all games.'
+                : 'Teams are ranked by wins, then by point differential.'}
             </p>
           </div>
 
@@ -233,8 +284,12 @@ function App() {
           <h2>Tournament Results</h2>
 
           <div className="stats-container">
-            <h3>Player Statistics</h3>
-            <StatsTable rounds={rounds} />
+            <h3>{format === '8-player' ? 'Player Statistics' : 'Team Standings'}</h3>
+            {format === '8-player' ? (
+              <StatsTable rounds={rounds} />
+            ) : (
+              <TeamStatsTable rounds={rounds} />
+            )}
           </div>
 
           <div className="sidebets-container">
@@ -251,7 +306,7 @@ function App() {
           <div className="payouts-container">
             <h3>Payment Calculation</h3>
             <p className="wager-reminder">Entry Fee: ${entryFee} per player</p>
-            <PayoutsTable rounds={rounds} entryFee={entryFee} sideBets={sideBets} />
+            <PayoutsTable rounds={rounds} entryFee={entryFee} sideBets={sideBets} format={format} />
           </div>
 
           <button className="reset-button" onClick={resetTournament}>
@@ -399,18 +454,133 @@ function StatsTable({ rounds }: { rounds: Round[] }) {
   );
 }
 
+function TeamStatsTable({ rounds }: { rounds: Round[] }) {
+  const teamStats = calculateTeamStats(rounds);
+
+  return (
+    <table className="stats-table">
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Team</th>
+          <th>Wins</th>
+          <th>Losses</th>
+          <th>Points For</th>
+          <th>Points Against</th>
+          <th>Differential</th>
+        </tr>
+      </thead>
+      <tbody>
+        {teamStats.map((team, index) => (
+          <tr key={team.teamName}>
+            <td>
+              <strong>
+                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : index + 1}
+              </strong>
+            </td>
+            <td><strong>{team.teamName}</strong></td>
+            <td>{team.wins}</td>
+            <td>{team.losses}</td>
+            <td>{team.pointsScored}</td>
+            <td>{team.pointsConceded}</td>
+            <td className={team.pointDifferential > 0 ? 'positive' : team.pointDifferential < 0 ? 'negative' : ''}>
+              {team.pointDifferential > 0 ? '+' : ''}{team.pointDifferential}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function PayoutsTable({
   rounds,
   entryFee,
   sideBets,
+  format,
 }: {
   rounds: Round[];
   entryFee: number;
   sideBets: SideBet[];
+  format: TournamentFormat;
 }) {
+  const sideBetTotals = calculateSideBetTotals(sideBets);
+
+  if (format === '12-player') {
+    const teamStats = calculateTeamStats(rounds);
+    const payouts = calculate12PlayerPayoutsWithSideBets(rounds, entryFee, sideBets);
+    const teamPrizes = [6, 4, 2];
+    const totalPlayers = 12;
+    const totalPaid = totalPlayers * entryFee;
+    const totalPrizes = teamPrizes.reduce((sum, prize) => sum + prize * 2, 0);
+
+    // Get all unique players with their payouts
+    const allPlayers = new Map<string, { team: string; rank: number; prize: number }>();
+    teamStats.forEach((team, index) => {
+      const prize = index < 3 ? teamPrizes[index] : 0;
+      team.players.forEach((player) => {
+        allPlayers.set(player, { team: team.teamName, rank: index, prize });
+      });
+    });
+
+    return (
+      <>
+        <div className="payout-info">
+          <p>Total entry fees collected: <strong>${totalPaid}</strong></p>
+          <p>Total prizes awarded: <strong>${totalPrizes}</strong></p>
+        </div>
+        <table className="payouts-table">
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Team Rank</th>
+              <th>Prize</th>
+              <th>Entry Fee</th>
+              <th>Side Bets</th>
+              <th>Net Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from(allPlayers.entries()).map(([player, { team, rank, prize }]) => {
+              const sideBetAmount = sideBetTotals[player] || 0;
+              const netAmount = payouts[player];
+              const rankDisplay = rank === 0 ? '🥇 1st' : rank === 1 ? '🥈 2nd' : rank === 2 ? '🥉 3rd' : `${rank + 1}th`;
+
+              return (
+                <tr key={player} className={netAmount > 0 ? 'winner' : netAmount < 0 ? 'loser' : ''}>
+                  <td><strong>{player}</strong></td>
+                  <td>{team}</td>
+                  <td><strong>{rankDisplay}</strong></td>
+                  <td className={prize > 0 ? 'positive' : ''}>
+                    ${prize.toFixed(2)}
+                  </td>
+                  <td className="negative">-${entryFee.toFixed(2)}</td>
+                  <td className={sideBetAmount > 0 ? 'positive' : sideBetAmount < 0 ? 'negative' : ''}>
+                    {sideBetAmount !== 0 ? `${sideBetAmount > 0 ? '+' : ''}$${Math.abs(sideBetAmount).toFixed(2)}` : '$0.00'}
+                  </td>
+                  <td className={netAmount > 0 ? 'positive' : netAmount < 0 ? 'negative' : ''}>
+                    <strong>${netAmount > 0 ? '+' : ''}{netAmount.toFixed(2)}</strong>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div className="payout-summary">
+          <p>
+            Balance: $
+            {(totalPrizes - totalPaid).toFixed(2)}{' '}
+            {Math.abs(totalPrizes - totalPaid) < 0.01 ? '✓' : '⚠️'}
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  // 8-player format
   const stats = calculatePlayerStats(rounds);
   const payouts = calculatePayoutsWithSideBets(rounds, entryFee, sideBets);
-  const sideBetTotals = calculateSideBetTotals(sideBets);
 
   // Sort by points lost (ascending - fewest points lost wins)
   const sortedPlayers = Object.entries(stats).sort(

@@ -1,3 +1,5 @@
+export type TournamentFormat = '8-player' | '12-player';
+
 export interface Game {
   id: number;
   team1: [string, string];
@@ -17,6 +19,16 @@ export interface SideBet {
   team2: [string, string];
   amount: number;
   winner: 1 | 2 | null; // 1 for team1, 2 for team2, null if not yet determined
+}
+
+export interface TeamStats {
+  teamName: string;
+  players: [string, string];
+  wins: number;
+  losses: number;
+  pointsScored: number;
+  pointsConceded: number;
+  pointDifferential: number;
 }
 
 /**
@@ -82,6 +94,65 @@ export function generateRoundRobinSchedule(players: string[]): Round[] {
       games,
     });
   });
+
+  return rounds;
+}
+
+/**
+ * Generates a round-robin schedule for 12 players (6 teams)
+ * Players are randomly paired into teams at the start
+ * Each team plays every other team exactly once (5 games per team)
+ */
+export function generate12PlayerSchedule(players: string[]): Round[] {
+  if (players.length !== 12) {
+    throw new Error('Exactly 12 players are required');
+  }
+
+  // Randomly shuffle players and pair them into 6 teams
+  const shuffledPlayers = shuffleArray(players);
+  const teams: Array<[string, string]> = [];
+  for (let i = 0; i < 12; i += 2) {
+    teams.push([shuffledPlayers[i], shuffledPlayers[i + 1]]);
+  }
+
+  // Round-robin scheduling for 6 teams
+  // Using the circle method: 5 rounds, 3 games per round
+  const rounds: Round[] = [];
+  let gameId = 1;
+
+  // Circle method for round-robin with 6 teams
+  // Fix team 0, rotate others
+  const rotatingTeams = [1, 2, 3, 4, 5];
+
+  for (let round = 0; round < 5; round++) {
+    const games: Game[] = [];
+
+    // Team 0 plays against rotatingTeams[0]
+    games.push({
+      id: gameId++,
+      team1: teams[0],
+      team2: teams[rotatingTeams[0]],
+    });
+
+    // Pair up the remaining teams
+    for (let i = 1; i < 3; i++) {
+      const team1Idx = rotatingTeams[i];
+      const team2Idx = rotatingTeams[5 - i];
+      games.push({
+        id: gameId++,
+        team1: teams[team1Idx],
+        team2: teams[team2Idx],
+      });
+    }
+
+    rounds.push({
+      roundNumber: round + 1,
+      games,
+    });
+
+    // Rotate teams for next round (keep first position, rotate others)
+    rotatingTeams.unshift(rotatingTeams.pop()!);
+  }
 
   return rounds;
 }
@@ -225,6 +296,130 @@ export function calculatePayoutsWithSideBets(
 ): { [player: string]: number } {
   // Start with tournament payouts
   const payouts = calculatePayouts(rounds, entryFee);
+
+  // Apply side bet wins/losses
+  const sideBetTotals = calculateSideBetTotals(sideBets);
+  Object.entries(sideBetTotals).forEach(([player, amount]) => {
+    payouts[player] = (payouts[player] || 0) + amount;
+  });
+
+  return payouts;
+}
+
+/**
+ * Calculates team statistics for 12-player format
+ * Returns stats for each team (identified by their two players)
+ */
+export function calculateTeamStats(rounds: Round[]): TeamStats[] {
+  const teamMap = new Map<string, TeamStats>();
+
+  rounds.forEach((round) => {
+    round.games.forEach((game) => {
+      if (game.team1Score !== undefined && game.team2Score !== undefined) {
+        const team1Key = [...game.team1].sort().join(' & ');
+        const team2Key = [...game.team2].sort().join(' & ');
+
+        // Initialize team1 if not exists
+        if (!teamMap.has(team1Key)) {
+          teamMap.set(team1Key, {
+            teamName: team1Key,
+            players: game.team1,
+            wins: 0,
+            losses: 0,
+            pointsScored: 0,
+            pointsConceded: 0,
+            pointDifferential: 0,
+          });
+        }
+
+        // Initialize team2 if not exists
+        if (!teamMap.has(team2Key)) {
+          teamMap.set(team2Key, {
+            teamName: team2Key,
+            players: game.team2,
+            wins: 0,
+            losses: 0,
+            pointsScored: 0,
+            pointsConceded: 0,
+            pointDifferential: 0,
+          });
+        }
+
+        const team1Stats = teamMap.get(team1Key)!;
+        const team2Stats = teamMap.get(team2Key)!;
+
+        // Update stats
+        team1Stats.pointsScored += game.team1Score;
+        team1Stats.pointsConceded += game.team2Score;
+        team2Stats.pointsScored += game.team2Score;
+        team2Stats.pointsConceded += game.team1Score;
+
+        if (game.team1Score > game.team2Score) {
+          team1Stats.wins++;
+          team2Stats.losses++;
+        } else if (game.team2Score > game.team1Score) {
+          team2Stats.wins++;
+          team1Stats.losses++;
+        }
+
+        team1Stats.pointDifferential = team1Stats.pointsScored - team1Stats.pointsConceded;
+        team2Stats.pointDifferential = team2Stats.pointsScored - team2Stats.pointsConceded;
+      }
+    });
+  });
+
+  // Convert map to array and sort by wins (desc), then point differential (desc)
+  return Array.from(teamMap.values()).sort((a, b) => {
+    if (b.wins !== a.wins) return b.wins - a.wins;
+    return b.pointDifferential - a.pointDifferential;
+  });
+}
+
+/**
+ * Calculates payouts for 12-player format
+ * Entry fee: $2 per player
+ * 1st place team: $6 each (total $12)
+ * 2nd place team: $4 each (total $8)
+ * 3rd place team: $2 each (total $4)
+ * Total payout: $24, Total collected: $24
+ */
+export function calculate12PlayerPayouts(
+  rounds: Round[],
+  entryFee: number
+): { [player: string]: number } {
+  const teamStats = calculateTeamStats(rounds);
+  const payouts: { [player: string]: number } = {};
+
+  // Prize distribution for teams
+  const teamPrizes = [6, 4, 2]; // Per player on 1st, 2nd, 3rd place teams
+
+  // Initialize all players with negative entry fee
+  teamStats.forEach((team) => {
+    team.players.forEach((player) => {
+      payouts[player] = -entryFee;
+    });
+  });
+
+  // Add prizes to top 3 teams
+  teamStats.slice(0, 3).forEach((team, index) => {
+    team.players.forEach((player) => {
+      payouts[player] += teamPrizes[index];
+    });
+  });
+
+  return payouts;
+}
+
+/**
+ * Calculates payouts for 12-player format including side bets
+ */
+export function calculate12PlayerPayoutsWithSideBets(
+  rounds: Round[],
+  entryFee: number,
+  sideBets: SideBet[]
+): { [player: string]: number } {
+  // Start with tournament payouts
+  const payouts = calculate12PlayerPayouts(rounds, entryFee);
 
   // Apply side bet wins/losses
   const sideBetTotals = calculateSideBetTotals(sideBets);
